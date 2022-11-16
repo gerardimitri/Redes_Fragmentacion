@@ -75,8 +75,8 @@ def fragment_IP_packet(packet, MTU):
     flag = packet_headers[6]
     if message_size > MTU - header_size:
         while message_size > 0:
+            fragment = packet_headers.copy()
             if message_size > MTU - header_size:
-                fragment = packet_headers
                 # Modify the offset
                 fragment[4] = str(offset)
                 # Modify the size, size must be of length 8
@@ -89,7 +89,6 @@ def fragment_IP_packet(packet, MTU):
                 message_size = len(packet_message.encode())
                 offset += MTU - header_size
             else:
-                fragment = packet_headers
                 # Modify the offset
                 fragment[4] = str(offset)
                 # Modify the size, size must be of length 8
@@ -104,20 +103,29 @@ def fragment_IP_packet(packet, MTU):
     return fragments
 
 #if the packet is not reassembled, return None
+# format: [Dirección IP],[Puerto],[TTL],[ID],[Offset],[Tamaño],[FLAG],[mensaje]
 def reassemble_IP_packet(fragments):
-    global dic_packets
-    if len(fragments) == 1:
-        return fragments[0]
-    else:
-        if len(fragments) == int(fragments[0][5]):
-            fragments.sort(key=lambda x: int(x[4]))
-            packet = fragments[0]
-            for fragment in fragments[1:]:
-                packet[7] += fragment[7]
-            packet[6] = "0"
-            return packet
-        else:
+    fragments.sort(key=lambda x: int(x[4]))
+    current_offset = 0
+    current_message = ""
+    current_size = 0
+    if int(fragments[0][4]) != 0:
+        return None
+    if int(fragments[-1][6]) != 0:
+        return None
+    print(f"Reassembling {len(fragments)} fragments")
+    print(f"First fragment: {fragments[0]}")
+    print(f"Last fragment: {fragments[-1]}")
+    for fragment in fragments:
+        if int(fragment[4]) != current_offset:
             return None
+        current_message += fragment[7]
+        current_offset += int(fragment[5])
+        current_size += int(fragment[5])
+    packet_to_return = fragments[0][0:7]
+    packet_to_return.append(current_message)
+    packet_to_return[5] = str(current_size).zfill(8)
+    return create_packet(packet_to_return)
 
 
 def add_packet_to_dic(parsed_IP_packet):
@@ -147,13 +155,13 @@ while True:
             print(f"No route found for destination address {destiny_address} for packet {parsed_IP_packet}")
             add_packet_to_dic(parsed_IP_packet)
             if reassemble_IP_packet(dic_packets[parsed_IP_packet[3]]) != None:
+                print(f"------------> Packet {parsed_IP_packet[3]} reassembled")
                 print("Reassembled message: {}".format(reassemble_IP_packet(dic_packets[parsed_IP_packet[3]])))
-                del dic_packets[parsed_IP_packet[3]]
     else:
         if check_routes(router_routes, destiny_address) == None:
             print(f"Packet {parsed_IP_packet} has reached its TTL limit")
             add_packet_to_dic(parsed_IP_packet)
             if reassemble_IP_packet(dic_packets[parsed_IP_packet[3]]) != None:
+                print(f"------------> Packet {parsed_IP_packet[3]} reassembled")
                 print("Reassembled message: {}".format(reassemble_IP_packet(dic_packets[parsed_IP_packet[3]])))
-                del dic_packets[parsed_IP_packet[3]]
         print(f"received package {parsed_IP_packet} with TTL = 0")
